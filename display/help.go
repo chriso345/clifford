@@ -5,13 +5,14 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/chriso345/clifford/errors"
 	"github.com/chriso345/clifford/internal/common"
 )
 
 func BuildHelp(target any, long bool) (string, error) {
 	_ = long // Unused parameter, kept for compatibility
 	if !common.IsStructPtr(target) {
-		return "", fmt.Errorf("invalid type: must pass pointer to struct")
+		return "", errors.NewParseError("invalid type: must pass pointer to struct")
 	}
 
 	t := common.GetStructType(target)
@@ -26,7 +27,7 @@ func BuildHelp(target any, long bool) (string, error) {
 		}
 	}
 	if name == "" {
-		return "", fmt.Errorf("struct must embed `Clifford` with `name` tag")
+		return "", errors.NewParseError("struct must embed `Clifford` with `name` tag")
 	}
 
 	var builder strings.Builder

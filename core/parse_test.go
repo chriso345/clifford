@@ -1,9 +1,11 @@
 package core
 
 import (
+	stderrs "errors"
 	"os"
 	"testing"
 
+	clierr "github.com/chriso345/clifford/errors"
 	"github.com/chriso345/gore/assert"
 )
 
@@ -105,7 +107,42 @@ func TestParse_MissingRequired(t *testing.T) {
 
 	err := Parse(&cli)
 	assert.NotNil(t, err)
-	assert.StringContains(t, err.Error(), "missing required argument: Name")
+	var me clierr.MissingArgError
+	ok := stderrs.As(err, &me)
+	assert.True(t, ok)
+	assert.Equal(t, me.Field, "Name")
+}
+
+func TestParse_UnsupportedFieldType(t *testing.T) {
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+
+	os.Args = []string{"cmd", "--opt", "v"}
+
+	target := struct {
+		Clifford `name:"myapp"`
+		Opt      struct {
+			Value    []string
+			Clifford `long:"opt"`
+		}
+	}{}
+
+	err := Parse(&target)
+	assert.NotNil(t, err)
+	var ue clierr.UnsupportedFieldTypeError
+	ok := stderrs.As(err, &ue)
+	assert.True(t, ok)
+	assert.Equal(t, ue.Field, "Opt")
+	assert.StringContains(t, err.Error(), "slice")
+}
+
+func TestParse_InvalidTarget(t *testing.T) {
+	// Passing a non-struct pointer/value should return a ParseError
+	err := Parse(123)
+	assert.NotNil(t, err)
+	var pe clierr.ParseError
+	ok := stderrs.As(err, &pe)
+	assert.True(t, ok)
 }
 
 func TestParse_HelpFlag(t *testing.T) {
@@ -167,4 +204,26 @@ func TestParse_VersionFlag(t *testing.T) {
 
 	_ = Parse(&cli)
 	t.Errorf("should have exited before this line")
+}
+
+func TestParse_UnknownSubcommand(t *testing.T) {
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+
+	os.Args = []string{"app", "srve"} // typo for 'serve'
+
+	target := struct {
+		Clifford `name:"app"`
+		Serve    struct {
+			Subcommand
+		} `subcmd:"serve"`
+	}{}
+
+	err := Parse(&target)
+	assert.NotNil(t, err)
+	var ue clierr.UnknownSubcommandError
+	ok := stderrs.As(err, &ue)
+	assert.True(t, ok)
+	// suggestion should be present when typo is close
+	assert.StringContains(t, err.Error(), "did you mean")
 }

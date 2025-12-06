@@ -4,12 +4,13 @@ import (
 	"fmt"
 	"runtime/debug"
 
+	"github.com/chriso345/clifford/errors"
 	"github.com/chriso345/clifford/internal/common"
 )
 
 func BuildVersion(target any) (string, error) {
 	if !common.IsStructPtr(target) {
-		return "", fmt.Errorf("invalid type: must pass pointer to struct")
+		return "", errors.NewParseError("invalid type: must pass pointer to struct")
 	}
 
 	t := common.GetStructType(target)
@@ -39,7 +40,7 @@ func BuildVersion(target any) (string, error) {
 	}
 
 	if versionFromClifford != "" && versionFromVersionField != "" {
-		return "", fmt.Errorf("conflicting version tags: both Clifford and Version field specify a version")
+		return "", errors.NewParseError("conflicting version tags: both Clifford and Version field specify a version")
 	}
 
 	version := versionFromVersionField
@@ -66,12 +67,12 @@ func BuildVersion(target any) (string, error) {
 func inferVersion() (string, error) {
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
-		return "", fmt.Errorf("unable to read build info")
+		return "", errors.NewParseError("unable to read build info")
 	}
 
 	if info.Main.Version != "" && info.Main.Version != "(devel)" {
 		return info.Main.Version, nil
 	}
 
-	return "", fmt.Errorf("no version info found in build metadata")
+	return "", errors.NewParseError("no version info found in build metadata")
 }

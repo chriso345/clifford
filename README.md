@@ -68,6 +68,15 @@ func main() {
 - Passing `-h` or `--help` will print an automatically generated help message and exit.
 - Passing `--version` will print the version information and exit.
 
+If a user mistypes a subcommand, clifford will return a helpful message with a suggested correction:
+
+```text
+$ app srve
+unknown subcommand: srve (did you mean "serve"?)
+```
+
+This suggestion is based on fuzzy matching and common transposition errors.
+
 ## Public API
 
 The public API of `clifford` is still under development. The following types and functions are available:

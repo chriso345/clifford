@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/chriso345/clifford/display"
+	"github.com/chriso345/clifford/errors"
 	"github.com/chriso345/clifford/internal/common"
 )
 
@@ -47,7 +48,7 @@ func buildArgMaps(args []string) (map[string]string, map[string]int, []string, [
 // This function does not perform subcommand dispatching.
 func parseFields(target any, args []string) error {
 	if !common.IsStructPtr(target) {
-		return fmt.Errorf("invalid type: must pass pointer to struct")
+		return errors.NewParseError("invalid type: must pass pointer to struct")
 	}
 
 	argMap, argIndex, positionals, _ := buildArgMaps(args)
@@ -148,7 +149,7 @@ func parseFields(target any, args []string) error {
 
 		// Required check
 		if !found && tags["required"] == "true" {
-			return fmt.Errorf("missing required argument: %s", field.Name)
+			return errors.NewMissingArg(field.Name)
 		}
 
 		// Set the value to the `Value` field
@@ -174,7 +175,7 @@ func parseFields(target any, args []string) error {
 					valField.SetBool(boolVal)
 				}
 			default:
-				return fmt.Errorf("unsupported type for field %s: %s", field.Name, valField.Kind())
+				return errors.NewUnsupportedField(field.Name, valField.Kind().String())
 			}
 		}
 	}
@@ -185,7 +186,7 @@ func parseFields(target any, args []string) error {
 // parseWithArgs is the recursive parser that supports subcommand dispatch.
 func parseWithArgs(target any, args []string) error {
 	if !common.IsStructPtr(target) {
-		return fmt.Errorf("invalid type: must pass pointer to struct")
+		return errors.NewParseError("invalid type: must pass pointer to struct")
 	}
 
 	// Normalize args: drop everything before "--"
@@ -201,6 +202,7 @@ func parseWithArgs(target any, args []string) error {
 		first := positionals[0]
 		v := reflect.ValueOf(target).Elem()
 		t := v.Type()
+		var subNames []string
 		for i := range t.NumField() {
 			field := t.Field(i)
 			if field.Type.Kind() != reflect.Struct {
@@ -217,6 +219,7 @@ func parseWithArgs(target any, args []string) error {
 			if name == "" {
 				name = strings.ToLower(field.Name)
 			}
+			subNames = append(subNames, name)
 			if name == first {
 				// Parse root fields with only args before the subcommand token
 				posIdx := positionalIdxs[0]
@@ -230,10 +233,131 @@ func parseWithArgs(target any, args []string) error {
 				return parseWithArgs(subPtr, subArgs)
 			}
 		}
+		// If we had positionals and potential subcommands but no match, return an informative error
+		if len(subNames) > 0 {
+			suggestion := closestMatch(first, subNames)
+			return errors.NewUnknownSubcommand(first, suggestion)
+		}
 	}
 
 	// No subcommand matched: parse all fields for this target
 	return parseFields(target, args)
+}
+
+// closestMatch returns the candidate with the smallest edit distance to target, or
+// empty string if none are within a reasonable threshold.
+func closestMatch(target string, candidates []string) string {
+	if target == "" || len(candidates) == 0 {
+		return ""
+	}
+	low := strings.ToLower(target)
+	// Prefer prefix matches (case-insensitive)
+	for _, c := range candidates {
+		if strings.HasPrefix(strings.ToLower(c), low) {
+			return c
+		}
+	}
+
+	best := ""
+	bestDist := -1
+	for _, c := range candidates {
+		lc := strings.ToLower(c)
+		// Quick length check to avoid large distances
+		if abs(len(lc)-len(low)) > 3 {
+			continue
+		}
+		// Treat single transposition as distance 1
+		if isTransposition(low, lc) {
+			return c
+		}
+		d := levenshtein(low, lc)
+		if bestDist == -1 || d < bestDist {
+			bestDist = d
+			best = c
+		}
+	}
+	// Only suggest if distance is small (adaptive threshold)
+	if bestDist >= 0 && bestDist <= max(2, len(low)/3) {
+		return best
+	}
+	return ""
+}
+
+// isTransposition checks for one-character transposition (Damerau case)
+func isTransposition(a, b string) bool {
+	if len(a) != len(b) || len(a) < 2 {
+		return false
+	}
+	var diff []int
+	for i := 0; i < len(a); i++ {
+		if a[i] != b[i] {
+			diff = append(diff, i)
+			if len(diff) > 2 {
+				return false
+			}
+		}
+	}
+	if len(diff) != 2 {
+		return false
+	}
+	return a[diff[0]] == b[diff[1]] && a[diff[1]] == b[diff[0]]
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+func abs(a int) int {
+	if a < 0 {
+		return -a
+	}
+	return a
+}
+
+// levenshtein computes the Levenshtein edit distance between a and b.
+func levenshtein(a, b string) int {
+	if a == b {
+		return 0
+	}
+	la := len(a)
+	lb := len(b)
+	if la == 0 {
+		return lb
+	}
+	if lb == 0 {
+		return la
+	}
+	// Initialize distance matrix with two rows to save memory
+	prev := make([]int, lb+1)
+	curr := make([]int, lb+1)
+	for j := 0; j <= lb; j++ {
+		prev[j] = j
+	}
+	for i := 1; i <= la; i++ {
+		curr[0] = i
+		ai := a[i-1]
+		for j := 1; j <= lb; j++ {
+			cost := 0
+			if ai != b[j-1] {
+				cost = 1
+			}
+			del := prev[j] + 1
+			ins := curr[j-1] + 1
+			sub := prev[j-1] + cost
+			min := del
+			if ins < min {
+				min = ins
+			}
+			if sub < min {
+				min = sub
+			}
+			curr[j] = min
+		}
+		copy(prev, curr)
+	}
+	return prev[lb]
 }
 
 func Parse(target any) error {
