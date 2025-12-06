@@ -22,3 +22,9 @@ type ShortTag struct{}
 type LongTag struct{}
 type Required struct{}
 type Desc struct{}
+
+// Subcommand is a marker type used to indicate that a struct field represents
+// a subcommand. Embed this in a sub-struct to mark it as a subcommand target.
+// An explicit subcommand name may also be provided via the parent field tag
+// `subcmd:"name"`; otherwise the lowercased field name is used.
+type Subcommand struct{}

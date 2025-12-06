@@ -26,8 +26,10 @@ func GetTagsFromEmbedded(t reflect.Type, fieldName string) map[string]string {
 			if val := field.Tag.Get("desc"); val != "" {
 				tags["desc"] = val
 			}
+		case "Subcommand":
+			tags["subcmd"] = "true"
 		default:
-			for _, key := range []string{"short", "long", "desc", "required"} {
+			for _, key := range []string{"short", "long", "desc", "required", "subcmd"} {
 				if val := field.Tag.Get(key); val != "" {
 					tags[key] = val
 				}
@@ -51,7 +53,7 @@ func ArgsIndexOf(args []string, s string) int {
 // IsStructPtr checks if the provided value is a pointer to a struct.
 func IsStructPtr(v any) bool {
 	t := reflect.TypeOf(v)
-	return t.Kind() == reflect.Ptr && t.Elem().Kind() == reflect.Struct
+	return t.Kind() == reflect.Pointer && t.Elem().Kind() == reflect.Struct
 }
 
 // GetStructType returns the reflect.Type of the underlying struct pointer.

@@ -67,6 +67,53 @@ func Example_simple_cli() {
 	// Output: Hello, bob!
 }
 
+func Example_flag() {
+	target := struct {
+		clifford.Clifford `name:"sampleapp"`
+
+		Flag struct {
+			Value             bool
+			clifford.Clifford `short:"f" long:"flag" desc:"A sample boolean flag"`
+		}
+	}{}
+
+	// Simulate command line arguments
+	os.Args = []string{"sampleapp", "-f"}
+
+	err := clifford.Parse(&target)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("Flag value:", target.Flag.Value)
+	// Output: Flag value: true
+}
+
+func Example_subcommand() {
+	// Demonstrate a single-level subcommand parse
+	os.Args = []string{"app", "serve", "--port", "8080"}
+
+	target := struct {
+		clifford.Clifford `name:"app"`
+		clifford.Help
+
+		Serve struct {
+			clifford.Subcommand
+			Port struct {
+				Value             int
+				clifford.Clifford `long:"port"`
+			}
+		} `subcmd:"serve"`
+	}{}
+
+	err := clifford.Parse(&target)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("Serve port:", target.Serve.Port.Value)
+	// Output: Serve port: 8080
+}
+
 func ExampleBuildVersion() {
 	target := struct {
 		clifford.Clifford `name:"mycli" version:"2.3.4"`

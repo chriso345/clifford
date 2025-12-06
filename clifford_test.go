@@ -62,3 +62,34 @@ func TestParse_PositionalAndFlags(t *testing.T) {
 	assert.Equal(t, target.Input.Value, "input.txt")
 	assert.True(t, target.Verbose.Value)
 }
+
+func TestParse_SubcommandDispatch(t *testing.T) {
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+	os.Args = []string{"app", "serve", "--port", "9000"}
+
+	target := struct {
+		clifford.Clifford `name:"app"`
+		clifford.Help
+
+		Serve struct {
+			clifford.Subcommand
+			Port struct {
+				Value             int
+				clifford.Clifford `long:"port"`
+			}
+		} `subcmd:"serve"`
+
+		Other struct {
+			clifford.Subcommand
+			Flag struct {
+				Value             bool
+				clifford.Clifford `short:"o"`
+			}
+		} `subcmd:"other"`
+	}{}
+
+	err := clifford.Parse(&target)
+	vital.Nil(t, err)
+	assert.Equal(t, target.Serve.Port.Value, 9000)
+}

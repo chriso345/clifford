@@ -69,6 +69,10 @@ type Version = core.Version
 //	}{}
 type Help = core.Help
 
+// Subcommand is a helper exported from core to mark fields as subcommands.
+// Usage: embed clifford.Subcommand in a sub-struct to mark it as a subcommand.
+type Subcommand = core.Subcommand
+
 // ShortTag is a helper type used to automatically generate a short flag
 // (e.g. `-n`) for a CLI option based on the parent struct field name.
 //

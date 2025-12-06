@@ -13,27 +13,16 @@ import (
 
 var osExit = os.Exit // Mockable for testing
 
-func Parse(target any) error {
-	if !common.IsStructPtr(target) {
-		return fmt.Errorf("invalid type: must pass pointer to struct")
-	}
-
-	args := os.Args[1:]
-
-	// For test mode: drop args before "--"
-	if i := common.ArgsIndexOf(args, "--"); i >= 0 {
-		args = args[i+1:]
-	}
-
-	// Pre-process args into maps for fast lookup
+// buildArgMaps processes the provided args and returns maps for flags and positionals.
+func buildArgMaps(args []string) (map[string]string, map[string]int, []string, []int) {
 	argMap := map[string]string{}
-	argFlags := map[string]bool{}
+	argIndex := map[string]int{}
 	used := map[int]bool{}
 
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if strings.HasPrefix(arg, "--") || strings.HasPrefix(arg, "-") {
-			argFlags[arg] = true
+			argIndex[arg] = i
 			used[i] = true
 			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
 				argMap[arg] = args[i+1]
@@ -43,18 +32,38 @@ func Parse(target any) error {
 		}
 	}
 
-	// Extract positional arguments (non-flag args)
 	var positionals []string
+	var positionalIdxs []int
 	for i, arg := range args {
 		if !used[i] {
 			positionals = append(positionals, arg)
+			positionalIdxs = append(positionalIdxs, i)
 		}
 	}
+	return argMap, argIndex, positionals, positionalIdxs
+}
+
+// parseFields parses flags/positionals into the provided target using only the given args.
+// This function does not perform subcommand dispatching.
+func parseFields(target any, args []string) error {
+	if !common.IsStructPtr(target) {
+		return fmt.Errorf("invalid type: must pass pointer to struct")
+	}
+
+	argMap, argIndex, positionals, _ := buildArgMaps(args)
 
 	// Handle --help
 	if common.MetaArgEnabled("Help", target) {
-		if argFlags["-h"] || argFlags["--help"] {
-			help, err := display.BuildHelp(target, argFlags["--help"])
+		if _, ok := argIndex["-h"]; ok {
+			help, err := display.BuildHelp(target, false)
+			if err != nil {
+				return err
+			}
+			fmt.Println(help)
+			osExit(0)
+		}
+		if _, ok := argIndex["--help"]; ok {
+			help, err := display.BuildHelp(target, true)
 			if err != nil {
 				return err
 			}
@@ -65,7 +74,7 @@ func Parse(target any) error {
 
 	// Handle --version
 	if common.MetaArgEnabled("Version", target) {
-		if argFlags["--version"] {
+		if _, ok := argIndex["--version"]; ok {
 			version, err := display.BuildVersion(target)
 			if err != nil {
 				return err
@@ -116,13 +125,13 @@ func Parse(target any) error {
 		}
 		// Handle boolean flags (without values)
 		if !found && tags["long"] != "" {
-			if _, ok := argFlags[longFlag]; ok {
+			if _, ok := argIndex[longFlag]; ok {
 				value = "true"
 				found = true
 			}
 		}
 		if !found && tags["short"] != "" {
-			if _, ok := argFlags[shortFlag]; ok {
+			if _, ok := argIndex[shortFlag]; ok {
 				value = "true"
 				found = true
 			}
@@ -171,4 +180,62 @@ func Parse(target any) error {
 	}
 
 	return nil
+}
+
+// parseWithArgs is the recursive parser that supports subcommand dispatch.
+func parseWithArgs(target any, args []string) error {
+	if !common.IsStructPtr(target) {
+		return fmt.Errorf("invalid type: must pass pointer to struct")
+	}
+
+	// Normalize args: drop everything before "--"
+	if i := common.ArgsIndexOf(args, "--"); i >= 0 {
+		args = args[i+1:]
+	}
+
+	// Build maps for full args to discover subcommands
+	_, _, positionals, positionalIdxs := buildArgMaps(args)
+
+	// If there's a potential subcommand (first positional), attempt to match it.
+	if len(positionals) > 0 {
+		first := positionals[0]
+		v := reflect.ValueOf(target).Elem()
+		t := v.Type()
+		for i := range t.NumField() {
+			field := t.Field(i)
+			if field.Type.Kind() != reflect.Struct {
+				continue
+			}
+			// Check for explicit subcmd tag on the parent field
+			explicit := field.Tag.Get("subcmd")
+			// Check for embedded Subcommand marker
+			tags := common.GetTagsFromEmbedded(field.Type, field.Name)
+			if explicit == "" && tags["subcmd"] != "true" {
+				continue
+			}
+			name := explicit
+			if name == "" {
+				name = strings.ToLower(field.Name)
+			}
+			if name == first {
+				// Parse root fields with only args before the subcommand token
+				posIdx := positionalIdxs[0]
+				rootArgs := args[:posIdx]
+				if err := parseFields(target, rootArgs); err != nil {
+					return err
+				}
+				// Descend into subcommand
+				subPtr := v.Field(i).Addr().Interface()
+				subArgs := args[posIdx+1:]
+				return parseWithArgs(subPtr, subArgs)
+			}
+		}
+	}
+
+	// No subcommand matched: parse all fields for this target
+	return parseFields(target, args)
+}
+
+func Parse(target any) error {
+	return parseWithArgs(target, os.Args[1:])
 }

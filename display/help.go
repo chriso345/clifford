@@ -44,6 +44,12 @@ func BuildHelp(target any, long bool) (string, error) {
 	}
 	builder.WriteString("\n")
 
+	// List subcommands if any
+	if subcommandsHelp := buildSubcommandsHelp(target); subcommandsHelp != "" {
+		builder.WriteString("\n" + ansiHelp("Subcommands:", ansiBold, ansiUnderline) + "\n")
+		builder.WriteString(subcommandsHelp)
+	}
+
 	if len(requiredArgs) > 0 {
 		builder.WriteString("\n" + ansiHelp("Arguments:", ansiBold, ansiUnderline) + "\n")
 		builder.WriteString(argsHelp(target))
@@ -55,6 +61,44 @@ func BuildHelp(target any, long bool) (string, error) {
 	}
 
 	return builder.String(), nil
+}
+
+// buildSubcommandsHelp returns formatted subcommands lines for the target struct.
+func buildSubcommandsHelp(target any) string {
+	t := common.GetStructType(target)
+	var lines []string
+	maxLen := 0
+
+	for i := range t.NumField() {
+		field := t.Field(i)
+		if field.Type.Kind() != reflect.Struct {
+			continue
+		}
+		// detect subcommand via tag or embedded marker
+		explicit := field.Tag.Get("subcmd")
+		tags := common.GetTagsFromEmbedded(field.Type, field.Name)
+		if explicit == "" && tags["subcmd"] != "true" {
+			continue
+		}
+		name := explicit
+		if name == "" {
+			name = strings.ToLower(field.Name)
+		}
+		desc := tags["desc"]
+		line := fmt.Sprintf("  %s||%s", name, desc)
+		if len(line) > maxLen {
+			maxLen = len(line)
+		}
+		lines = append(lines, line)
+	}
+
+	var builder strings.Builder
+	for _, line := range lines {
+		parts := strings.SplitN(line, "||", 2)
+		padding := strings.Repeat(" ", maxLen-len(parts[0]))
+		builder.WriteString(fmt.Sprintf("%s%s  %s\n", parts[0], padding, parts[1]))
+	}
+	return builder.String()
 }
 
 // === HELPERS ===
