@@ -2,12 +2,16 @@ package display
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 
 	"github.com/chriso345/clifford/errors"
 	"github.com/chriso345/clifford/internal/common"
 )
+
+const maxPad = 16 // maximum padding width to avoid excessive indentation
 
 func BuildHelp(target any, long bool) (string, error) {
 	_ = long // Unused parameter, kept for compatibility
@@ -27,7 +31,8 @@ func BuildHelp(target any, long bool) (string, error) {
 		}
 	}
 	if name == "" {
-		return "", errors.NewParseError("struct must embed `Clifford` with `name` tag")
+		// Fall back to the running program name if no explicit `name` tag is present.
+		name = filepath.Base(os.Args[0])
 	}
 
 	var builder strings.Builder
@@ -37,13 +42,20 @@ func BuildHelp(target any, long bool) (string, error) {
 	// Collect required args
 	requiredArgs := getRequiredArgs(target)
 	for _, arg := range requiredArgs {
-		builder.WriteString(fmt.Sprintf(" [%s]", strings.ToUpper(arg)))
+		// Required positional arguments are shown as angle-bracketed names.
+		builder.WriteString(fmt.Sprintf(" <%s>", strings.ToUpper(arg)))
 	}
 
 	if hasOptions(target) {
 		builder.WriteString(" [OPTIONS]")
 	}
 	builder.WriteString("\n")
+
+	// Description (if provided) should appear beneath Usage and above the rest of the help.
+	// Only include a top-level description when it is provided on the Clifford embedding.
+	if d := topLevelDescription(target); d != "" {
+		builder.WriteString("\n" + d + "\n")
+	}
 
 	// List subcommands if any
 	if subcommandsHelp := buildSubcommandsHelp(target); subcommandsHelp != "" {
@@ -67,37 +79,35 @@ func BuildHelp(target any, long bool) (string, error) {
 // buildSubcommandsHelp returns formatted subcommands lines for the target struct.
 func buildSubcommandsHelp(target any) string {
 	t := common.GetStructType(target)
-	var lines []string
-	maxLen := 0
+	var entries []struct{ name, desc string }
+	maxName := 0
+	const maxPad = 16 // maximum padding width to avoid excessive indentation
 
 	for i := range t.NumField() {
 		field := t.Field(i)
 		if field.Type.Kind() != reflect.Struct {
 			continue
 		}
-		// detect subcommand via tag or embedded marker
-		explicit := field.Tag.Get("subcmd")
+		// detect subcommand via embedded marker
 		tags := common.GetTagsFromEmbedded(field.Type, field.Name)
-		if explicit == "" && tags["subcmd"] != "true" {
+		if tags["subcmd"] != "true" {
 			continue
 		}
-		name := explicit
+		name := tags["name"]
 		if name == "" {
 			name = strings.ToLower(field.Name)
 		}
 		desc := tags["desc"]
-		line := fmt.Sprintf("  %s||%s", name, desc)
-		if len(line) > maxLen {
-			maxLen = len(line)
+		entries = append(entries, struct{ name, desc string }{name, desc})
+		if len(name) > maxName {
+			maxName = len(name)
 		}
-		lines = append(lines, line)
 	}
 
 	var builder strings.Builder
-	for _, line := range lines {
-		parts := strings.SplitN(line, "||", 2)
-		padding := strings.Repeat(" ", maxLen-len(parts[0]))
-		builder.WriteString(fmt.Sprintf("%s%s  %s\n", parts[0], padding, parts[1]))
+	pad := min(maxName, maxPad)
+	for _, e := range entries {
+		builder.WriteString(fmt.Sprintf("  %-*s %s\n", pad, e.name, e.desc))
 	}
 	return builder.String()
 }
@@ -128,6 +138,17 @@ func argsHelp(target any) string {
 
 		argName := field.Name
 		desc := tags["desc"]
+
+		// Show required positional arguments without square brackets
+		if _, req := tags["required"]; req {
+			line := fmt.Sprintf("  %s", strings.ToUpper(argName))
+			if len(line) > maxLen {
+				maxLen = len(line)
+			}
+			lines = append(lines, fmt.Sprintf("%s||%s", line, desc))
+			continue
+		}
+
 		line := fmt.Sprintf("  [%s]", strings.ToUpper(argName))
 		if len(line) > maxLen {
 			maxLen = len(line)
@@ -137,12 +158,35 @@ func argsHelp(target any) string {
 
 	// Format with aligned colons
 	var builder strings.Builder
+	pad := min(maxLen, maxPad)
 	for _, line := range lines {
 		parts := strings.SplitN(line, "||", 2)
-		padding := strings.Repeat(" ", maxLen-len(parts[0])+1)
+		padding := strings.Repeat(" ", pad-len(parts[0])+1)
 		builder.WriteString(fmt.Sprintf("%s%s %s\n", parts[0], padding, parts[1]))
 	}
 	return builder.String()
+}
+
+// topLevelDescription returns the description provided on the top-level Clifford embedding, if present.
+func topLevelDescription(target any) string {
+	t := common.GetStructType(target)
+	var desc string
+	for i := range t.NumField() {
+		field := t.Field(i)
+		// First, prefer a description on the Clifford embedding.
+		if field.Type.Name() == "Clifford" {
+			if d := field.Tag.Get("desc"); d != "" {
+				return d
+			}
+		}
+		// Otherwise, allow an anonymous top-level Desc embedding.
+		if field.Type.Name() == "Desc" {
+			if d := field.Tag.Get("desc"); d != "" {
+				return d
+			}
+		}
+	}
+	return desc
 }
 
 // optionsHelp generates help text for options in the target struct.
@@ -155,37 +199,68 @@ func optionsHelp(target any) string {
 	for i := range t.NumField() {
 		field := t.Field(i)
 		if field.Type.Name() == "Clifford" {
+			// By default show short + long for version/help; allow disabling via `help_short` or `version_short` tags on the Clifford field.
+			showVersionShort := true
+			showHelpShort := true
+			if val := field.Tag.Get("version_short"); val == "false" {
+				showVersionShort = false
+			}
+			if val := field.Tag.Get("help_short"); val == "false" {
+				showHelpShort = false
+			}
 			if field.Tag.Get("version") != "" {
-				curr := "  --version||Show version information"
-				lines = append(lines, curr)
-				if 11 > maxLen {
-					maxLen = 11
+				if showVersionShort {
+					curr := "  -v, --version||Show version information"
+					lines = append(lines, curr)
+					left := strings.SplitN(curr, "||", 2)[0]
+					if len(left) > maxLen {
+						maxLen = len(left)
+					}
+				} else {
+					curr := "  --version||Show version information"
+					lines = append(lines, curr)
+					left := strings.SplitN(curr, "||", 2)[0]
+					if len(left) > maxLen {
+						maxLen = len(left)
+					}
 				}
 			}
 			if field.Tag.Get("help") != "" {
-				curr := "  --help||Show this help message"
-				lines = append(lines, curr)
-				if 8 > maxLen {
-					maxLen = 8
+				if showHelpShort {
+					curr := "  -h, --help||Show this help message"
+					lines = append(lines, curr)
+					left := strings.SplitN(curr, "||", 2)[0]
+					if len(left) > maxLen {
+						maxLen = len(left)
+					}
+				} else {
+					curr := "  --help||Show this help message"
+					lines = append(lines, curr)
+					left := strings.SplitN(curr, "||", 2)[0]
+					if len(left) > maxLen {
+						maxLen = len(left)
+					}
 				}
 			}
 			continue
 		}
 
 		if field.Type.Name() == "Version" {
-			curr := "  --version||Show version information"
+			curr := "  -v, --version||Show version information"
 			lines = append(lines, curr)
-			if 11 > maxLen {
-				maxLen = 11
+			left := strings.SplitN(curr, "||", 2)[0]
+			if len(left) > maxLen {
+				maxLen = len(left)
 			}
 			continue
 		}
 
 		if field.Type.Name() == "Help" {
-			curr := "  --help||Show this help message"
+			curr := "  -h, --help||Show this help message"
 			lines = append(lines, curr)
-			if 8 > maxLen {
-				maxLen = 8
+			left := strings.SplitN(curr, "||", 2)[0]
+			if len(left) > maxLen {
+				maxLen = len(left)
 			}
 			continue
 		}
@@ -202,16 +277,44 @@ func optionsHelp(target any) string {
 		short := tags["short"]
 		long := tags["long"]
 		desc := tags["desc"]
-		typeHint := fmt.Sprintf("[%s]", strings.ToUpper(field.Name))
+
+		// Determine the underlying type of the Value field so we can omit type hints for booleans.
+		valField, ok := field.Type.FieldByName("Value")
+		isBool := ok && valField.Type.Kind() == reflect.Bool
+		var typeHint string
+		if !isBool {
+			typeHint = fmt.Sprintf("[%s]", strings.ToUpper(field.Name))
+		}
 
 		var flag string
 		switch {
 		case short != "" && long != "":
-			flag = fmt.Sprintf("  -%s, --%s %s", short, long, typeHint)
+			if typeHint != "" {
+				flag = fmt.Sprintf("  -%s, --%s %s", short, long, typeHint)
+			} else {
+				flag = fmt.Sprintf("  -%s, --%s", short, long)
+			}
 		case short != "":
-			flag = fmt.Sprintf("  -%s %s", short, typeHint)
+			if typeHint != "" {
+				flag = fmt.Sprintf("  -%s %s", short, typeHint)
+			} else {
+				flag = fmt.Sprintf("  -%s", short)
+			}
 		case long != "":
-			flag = fmt.Sprintf("  --%s %s", long, typeHint)
+			if typeHint != "" {
+				flag = fmt.Sprintf("  --%s %s", long, typeHint)
+			} else {
+				flag = fmt.Sprintf("  --%s", long)
+			}
+		}
+
+		// Append default value to description if present
+		if d, ok := tags["default"]; ok && d != "" {
+			if desc == "" {
+				desc = fmt.Sprintf("(default: %s)", d)
+			} else {
+				desc = fmt.Sprintf("%s (default: %s)", desc, d)
+			}
 		}
 
 		if len(flag) > maxLen {

@@ -73,20 +73,20 @@ func TestParse_SubcommandDispatch(t *testing.T) {
 		clifford.Help
 
 		Serve struct {
-			clifford.Subcommand
-			Port struct {
+			clifford.Subcommand `name:"serve"`
+			Port                struct {
 				Value             int
 				clifford.Clifford `long:"port"`
 			}
-		} `subcmd:"serve"`
+		}
 
 		Other struct {
-			clifford.Subcommand
-			Flag struct {
+			clifford.Subcommand `name:"other"`
+			Flag                struct {
 				Value             bool
 				clifford.Clifford `short:"o"`
 			}
-		} `subcmd:"other"`
+		}
 	}{}
 
 	err := clifford.Parse(&target)

@@ -45,8 +45,7 @@ func TestBuildHelp_MissingNameTag(t *testing.T) {
 	}{}
 
 	_, err := clifford.BuildHelp(&target, false)
-	assert.NotNil(t, err)
-	assert.Equal(t, err.Error(), "struct must embed `Clifford` with `name` tag")
+	assert.Nil(t, err)
 }
 
 func TestBuildHelp_NoOptionsOrArgs(t *testing.T) {

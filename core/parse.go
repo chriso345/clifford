@@ -147,6 +147,14 @@ func parseFields(target any, args []string) error {
 			}
 		}
 
+		// If not found, use any declared default value.
+		if !found {
+			if d, ok := tags["default"]; ok && d != "" {
+				value = d
+				found = true
+			}
+		}
+
 		// Required check
 		if !found && tags["required"] == "true" {
 			return errors.NewMissingArg(field.Name)
@@ -208,14 +216,12 @@ func parseWithArgs(target any, args []string) error {
 			if field.Type.Kind() != reflect.Struct {
 				continue
 			}
-			// Check for explicit subcmd tag on the parent field
-			explicit := field.Tag.Get("subcmd")
 			// Check for embedded Subcommand marker
 			tags := common.GetTagsFromEmbedded(field.Type, field.Name)
-			if explicit == "" && tags["subcmd"] != "true" {
+			if tags["subcmd"] != "true" {
 				continue
 			}
-			name := explicit
+			name := tags["name"]
 			if name == "" {
 				name = strings.ToLower(field.Name)
 			}
@@ -227,9 +233,32 @@ func parseWithArgs(target any, args []string) error {
 				if err := parseFields(target, rootArgs); err != nil {
 					return err
 				}
-				// Descend into subcommand
+				// Mark the embedded Subcommand boolean field as used (true) so callers can inspect the parsed struct.
+				subVal := v.Field(i)
+				subType := subVal.Type()
+				for j := 0; j < subType.NumField(); j++ {
+					nf := subType.Field(j)
+					if nf.Anonymous && nf.Type.Name() == "Subcommand" {
+						f := subVal.Field(j)
+						if f.IsValid() && f.CanSet() && f.Kind() == reflect.Bool {
+							f.SetBool(true)
+						}
+						break
+					}
+				}
+				// If the subcommand help/version is being requested, build help that shows parent + subcommand.
 				subPtr := v.Field(i).Addr().Interface()
 				subArgs := args[posIdx+1:]
+				for _, a := range subArgs {
+					if a == "-h" || a == "--help" {
+						helper, err := display.BuildHelpWithParent(target, name, subPtr, a == "--help")
+						if err != nil {
+							return err
+						}
+						fmt.Println(helper)
+						osExit(0)
+					}
+				}
 				return parseWithArgs(subPtr, subArgs)
 			}
 		}

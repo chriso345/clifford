@@ -216,7 +216,7 @@ func TestParse_UnknownSubcommand(t *testing.T) {
 		Clifford `name:"app"`
 		Serve    struct {
 			Subcommand
-		} `subcmd:"serve"`
+		}
 	}{}
 
 	err := Parse(&target)

@@ -11,28 +11,35 @@ func GetTagsFromEmbedded(t reflect.Type, fieldName string) map[string]string {
 
 	for i := range t.NumField() {
 		field := t.Field(i)
-		if !field.Anonymous {
+		// If this is an anonymous embedded meta-field, derive tag information from its type.
+		if field.Anonymous {
+			switch field.Type.Name() {
+			case "ShortTag":
+				tags["short"] = strings.ToLower(string(fieldName[0]))
+			case "LongTag":
+				tags["long"] = strings.ToLower(fieldName)
+			case "Required":
+				tags["required"] = "true"
+			case "Desc":
+				if val := field.Tag.Get("desc"); val != "" {
+					tags["desc"] = val
+				}
+			case "Subcommand":
+				tags["subcmd"] = "true"
+			default:
+				for _, key := range []string{"short", "long", "desc", "required", "subcmd"} {
+					if val := field.Tag.Get(key); val != "" {
+						tags[key] = val
+					}
+				}
+			}
 			continue
 		}
 
-		switch field.Type.Name() {
-		case "ShortTag":
-			tags["short"] = strings.ToLower(string(fieldName[0]))
-		case "LongTag":
-			tags["long"] = strings.ToLower(fieldName)
-		case "Required":
-			tags["required"] = "true"
-		case "Desc":
-			if val := field.Tag.Get("desc"); val != "" {
-				tags["desc"] = val
-			}
-		case "Subcommand":
-			tags["subcmd"] = "true"
-		default:
-			for _, key := range []string{"short", "long", "desc", "required", "subcmd"} {
-				if val := field.Tag.Get(key); val != "" {
-					tags[key] = val
-				}
+		// Also allow metadata to be provided directly on non-anonymous fields (e.g. default values).
+		for _, key := range []string{"default", "desc", "required", "short", "long", "subcmd"} {
+			if val := field.Tag.Get(key); val != "" {
+				tags[key] = val
 			}
 		}
 	}
