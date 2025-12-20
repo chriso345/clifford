@@ -9,9 +9,9 @@ import (
 
 type CLIArgs struct {
 	clifford.Clifford `name:"app"`
-	clifford.Help
-	clifford.Version `version:"0.1.0"`
-	clifford.Desc    `desc:"An example application demonstrating clifford features"`
+	clifford.Help     `type:"both"`
+	clifford.Version  `version:"0.1.0"`
+	clifford.Desc     `desc:"An example application demonstrating clifford features"`
 
 	Serve struct {
 		clifford.Subcommand `name:"server"`

@@ -98,9 +98,32 @@ func buildSubcommandsHelp(target any) string {
 			name = strings.ToLower(field.Name)
 		}
 		desc := tags["desc"]
+		// If the subcommand has an embedded Help with tag "subcmd" or "both",
+		// mention that help is available as a subcommand under this entry.
+		if tagsHelp := tags["help"]; tagsHelp == "subcmd" || tagsHelp == "both" {
+			desc = strings.TrimSpace(desc + " (use '" + name + " help' for more details)")
+		}
 		entries = append(entries, struct{ name, desc string }{name, desc})
 		if len(name) > maxName {
 			maxName = len(name)
+		}
+	}
+	// Also include a top-level help subcommand if the root exposes help via subcmd/both
+	pt := common.GetStructType(target)
+	for i := range pt.NumField() {
+		f := pt.Field(i)
+		if f.Type.Name() == "Help" {
+			helpTag := f.Tag.Get("help")
+			if helpTag == "" {
+				helpTag = f.Tag.Get("type")
+			}
+			if helpTag == "subcmd" || helpTag == "both" {
+				entries = append(entries, struct{ name, desc string }{"help", "Show help for a specific command"})
+				if len("help") > maxName {
+					maxName = len("help")
+				}
+			}
+			break
 		}
 	}
 
@@ -225,7 +248,39 @@ func optionsHelp(target any) string {
 					}
 				}
 			}
+			// Decide whether to show help as a flag based on Clifford tags and Help field annotations
+			helpShown := false
+			// determine if help flag already present
+			helpAdded := false
+			for _, l := range lines {
+				if strings.Contains(l, "--help") {
+					helpAdded = true
+					break
+				}
+			}
+			// look for explicit help tag on Clifford
 			if field.Tag.Get("help") != "" {
+				helpShown = true
+			}
+			// Also accept `type:"subcmd"|"flag"|"both"` on a top-level Help embedding
+			if !helpShown {
+				// try scanning parent type for Help embedding type tag
+				pt := t
+				for i := range pt.NumField() {
+					f := pt.Field(i)
+					if f.Type.Name() == "Help" {
+						tag := f.Tag.Get("help")
+						if tag == "" {
+							tag = f.Tag.Get("type")
+						}
+						if tag == "" || tag == "flag" || tag == "both" {
+							helpShown = true
+						}
+						break
+					}
+				}
+			}
+			if helpShown && !helpAdded {
 				if showHelpShort {
 					curr := "  -h, --help||Show this help message"
 					lines = append(lines, curr)
@@ -247,16 +302,6 @@ func optionsHelp(target any) string {
 
 		if field.Type.Name() == "Version" {
 			curr := "  -v, --version||Show version information"
-			lines = append(lines, curr)
-			left := strings.SplitN(curr, "||", 2)[0]
-			if len(left) > maxLen {
-				maxLen = len(left)
-			}
-			continue
-		}
-
-		if field.Type.Name() == "Help" {
-			curr := "  -h, --help||Show this help message"
 			lines = append(lines, curr)
 			left := strings.SplitN(curr, "||", 2)[0]
 			if len(left) > maxLen {
@@ -369,7 +414,24 @@ func hasOptions(target any) bool {
 		if field.Type.Name() == "Version" || field.Tag.Get("version") != "" {
 			return true
 		}
-		if field.Type.Name() == "Help" || field.Tag.Get("help") != "" {
+		if field.Type.Name() == "Help" {
+			// Check top-level Help tagging: only counts as option if type is flag or both (or unspecified)
+			if val := field.Tag.Get("help"); val != "" {
+				if val == "flag" || val == "both" {
+					return true
+				}
+				return false
+			}
+			if val := field.Tag.Get("type"); val != "" {
+				if val == "flag" || val == "both" {
+					return true
+				}
+				return false
+			}
+			// default behavior: show help flag
+			return true
+		}
+		if field.Tag.Get("help") != "" || field.Tag.Get("type") == "flag" {
 			return true
 		}
 

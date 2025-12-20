@@ -26,6 +26,13 @@ func GetTagsFromEmbedded(t reflect.Type, fieldName string) map[string]string {
 				}
 			case "Subcommand":
 				tags["subcmd"] = "true"
+			case "Help":
+				// Allow specifying how help is exposed: type:"flag"|"subcmd"|"both" or help:"..."
+				if val := field.Tag.Get("type"); val != "" {
+					tags["help"] = val
+				} else if val := field.Tag.Get("help"); val != "" {
+					tags["help"] = val
+				}
 			default:
 				for _, key := range []string{"short", "long", "desc", "required", "subcmd"} {
 					if val := field.Tag.Get(key); val != "" {
@@ -37,7 +44,7 @@ func GetTagsFromEmbedded(t reflect.Type, fieldName string) map[string]string {
 		}
 
 		// Also allow metadata to be provided directly on non-anonymous fields (e.g. default values).
-		for _, key := range []string{"default", "desc", "required", "short", "long", "subcmd"} {
+		for _, key := range []string{"default", "desc", "required", "short", "long", "subcmd", "help"} {
 			if val := field.Tag.Get(key); val != "" {
 				tags[key] = val
 			}

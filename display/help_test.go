@@ -99,6 +99,84 @@ func TestOptionsAlignment(t *testing.T) {
 	assert.True(t, pIndex == eIndex)
 }
 
+func TestBuildHelp_Subcommands(t *testing.T) {
+	target := struct {
+		clifford.Clifford `name:"subcmdtool"`
+
+		Start struct {
+			clifford.Subcommand `name:"start"`
+			clifford.Help
+			clifford.Desc `desc:"Start the service"`
+		}
+
+		Stop struct {
+			clifford.Subcommand `name:"stop"`
+			clifford.Help
+			clifford.Desc `desc:"Stop the service"`
+		}
+	}{}
+
+	help, err := clifford.BuildHelp(&target, false)
+	assert.Nil(t, err)
+	assert.StringContains(t, help, "start")
+	assert.StringContains(t, help, "Stop the service")
+	assert.StringContains(t, help, "Start the service")
+}
+
+func TestBuildHelp_HelpSubcommand(t *testing.T) {
+	target := struct {
+		clifford.Clifford `name:"tool"`
+		clifford.Help     `type:"subcmd"`
+
+		Start struct {
+			clifford.Subcommand `name:"start"`
+			clifford.Help
+			clifford.Desc `desc:"Start the service"`
+		}
+
+		Stop struct {
+			clifford.Subcommand `name:"stop"`
+			clifford.Help
+			clifford.Desc `desc:"Stop the service"`
+		}
+	}{}
+
+	help, err := clifford.BuildHelp(&target, false)
+	t.Logf("Help Output:\n%s", help)
+	assert.Nil(t, err)
+	assert.StringContains(t, help, "help")
+	assert.NotStringContains(t, help, "--help")
+	assert.StringContains(t, help, "Show help for a specific command")
+}
+
+func TestBuildHelp_HelpBoth(t *testing.T) {
+	target := struct {
+		clifford.Clifford `name:"tool"`
+		clifford.Help     `type:"both"`
+
+		Start struct {
+			clifford.Subcommand `name:"start"`
+			clifford.Help
+			clifford.Desc `desc:"Start the service"`
+		}
+
+		Stop struct {
+			clifford.Subcommand `name:"stop"`
+			clifford.Help
+			clifford.Desc `desc:"Stop the service"`
+		}
+	}{}
+
+	help, err := clifford.BuildHelp(&target, false)
+	t.Logf("Help Output:\n%s", help)
+	assert.Nil(t, err)
+	assert.StringContains(t, help, "Subcommands")
+	assert.StringContains(t, help, "help")
+	assert.StringContains(t, help, "--help")
+	assert.Equal(t, strings.Count(help, "--help"), 1)
+	assert.StringContains(t, help, "Show help for a specific command")
+}
+
 func filterLinesContaining(lines []string, terms ...string) []string {
 	var out []string
 	for _, line := range lines {

@@ -53,8 +53,24 @@ func parseFields(target any, args []string) error {
 
 	argMap, argIndex, positionals, _ := buildArgMaps(args)
 
-	// Handle --help
-	if common.MetaArgEnabled("Help", target) {
+	// Determine root help exposure mode (flag/subcmd/both). Default is flag.
+	helpMode := "flag"
+	if common.IsStructPtr(target) {
+		pt := common.GetStructType(target)
+		for i := range pt.NumField() {
+			f := pt.Field(i)
+			if f.Type.Name() == "Help" {
+				if val := f.Tag.Get("help"); val != "" {
+					helpMode = val
+				} else if val := f.Tag.Get("type"); val != "" {
+					helpMode = val
+				}
+				break
+			}
+		}
+	}
+	// Handle --help only when helpMode allows flag-based help
+	if helpMode != "subcmd" && common.MetaArgEnabled("Help", target) {
 		if _, ok := argIndex["-h"]; ok {
 			help, err := display.BuildHelp(target, false)
 			if err != nil {
@@ -210,6 +226,52 @@ func parseWithArgs(target any, args []string) error {
 		first := positionals[0]
 		v := reflect.ValueOf(target).Elem()
 		t := v.Type()
+		// Support invocation form: app help [subcommand]
+		if first == "help" {
+			if len(positionals) == 1 {
+				helper, err := display.BuildHelp(target, false)
+				if err != nil {
+					return err
+				}
+				fmt.Println(helper)
+				osExit(0)
+			}
+			second := positionals[1]
+			// collect subcommand names for suggestion
+			var subNames []string
+			for i := range t.NumField() {
+				field := t.Field(i)
+				if field.Type.Kind() != reflect.Struct {
+					continue
+				}
+				tags := common.GetTagsFromEmbedded(field.Type, field.Name)
+				if tags["subcmd"] != "true" {
+					continue
+				}
+				name := tags["name"]
+				if name == "" {
+					name = strings.ToLower(field.Name)
+				}
+				subNames = append(subNames, name)
+				if name == second {
+					// Only allow help via subcommand when the subcommand advertises help as subcmd or both
+					if ht := tags["help"]; ht == "subcmd" || ht == "both" {
+						subPtr := v.Field(i).Addr().Interface()
+						helper, err := display.BuildHelpWithParent(target, name, subPtr, false)
+						if err != nil {
+							return err
+						}
+						fmt.Println(helper)
+						osExit(0)
+					}
+				}
+			}
+			// No matching subcommand found: return informative error
+			if len(subNames) > 0 {
+				suggestion := closestMatch(second, subNames)
+				return errors.NewUnknownSubcommand(second, suggestion)
+			}
+		}
 		var subNames []string
 		for i := range t.NumField() {
 			field := t.Field(i)
