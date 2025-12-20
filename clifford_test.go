@@ -142,26 +142,12 @@ func TestParse_SubcommandProperHelp(t *testing.T) {
 		}
 	}{}
 
-	// Capture the stdout output
-	r, w, _ := os.Pipe()
-	oldStdout := os.Stdout
-	os.Stdout = w
-
-	err := clifford.Parse(&target)
-
-	// Print the captured output
-	w.Close()
-	os.Stdout = oldStdout
-	var output []byte
-	buf := make([]byte, 1024)
-	n, _ := r.Read(buf)
-	output = buf[:n]
-
-	t.Log(string(output))
-
+	// call BuildHelpWithParent directly to inspect help output without exiting
+	subPtr := target.Run
+	helper, err := clifford.BuildHelpWithParent(&target, "run", &subPtr, false)
 	vital.Nil(t, err)
-	assert.StringContains(t, string(output), "Usage: app <FILE>")
-	assert.StringContains(t, string(output), "Run a specific file")
-	assert.StringContains(t, string(output), "FILE     File to run")
-	assert.NotStringContains(t, string(output), "DESC")
+	assert.StringContains(t, helper, "Usage: app <FILE>")
+	assert.StringContains(t, helper, "Run a specific file")
+	assert.StringContains(t, helper, "FILE     File to run")
+	assert.NotStringContains(t, helper, "DESC")
 }

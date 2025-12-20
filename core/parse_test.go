@@ -3,6 +3,7 @@ package core
 import (
 	stderrs "errors"
 	"os"
+	"strings"
 	"testing"
 
 	clierr "github.com/chriso345/clifford/errors"
@@ -226,4 +227,60 @@ func TestParse_UnknownSubcommand(t *testing.T) {
 	assert.True(t, ok)
 	// suggestion should be present when typo is close
 	assert.StringContains(t, err.Error(), "did you mean")
+}
+
+func TestSubcommandHelpCallsExit(t *testing.T) {
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+	os.Args = []string{"app", "serve", "--help"}
+
+	// construct target with Help enabled and a Serve subcommand similar to your other tests
+	target := struct {
+		Clifford `name:"app"`
+		Help
+		Serve struct {
+			Subcommand `name:"serve"`
+			Port       struct {
+				Value    int
+				Clifford `long:"port"`
+			}
+		}
+	}{}
+
+	// override osExit
+	oldExit := osExit
+	defer func() { osExit = oldExit }()
+	exited := false
+	osExit = func(code int) { exited = true; panic("os.Exit") }
+
+	// capture stdout
+	r, w, _ := os.Pipe()
+	oldOut := os.Stdout
+	os.Stdout = w
+	defer func() { if err := w.Close(); err != nil { t.Fatalf("close pipe: %v", err) }; os.Stdout = oldOut }()
+
+	// expect panic from our osExit override
+	defer func() {
+		os.Stdout = oldOut
+		if rec := recover(); rec == nil {
+			t.Fatalf("expected os.Exit panic")
+		}
+		// read captured output
+		buf := make([]byte, 4096)
+		n, _ := r.Read(buf)
+		out := string(buf[:n])
+		if !exited {
+			t.Fatalf("expected osExit to be called")
+		}
+		if !strings.Contains(out, "Usage:") {
+			t.Fatalf("help output missing; got: %q", out)
+		}
+	}()
+
+	// call parser (will panic via our osExit override)
+	if err := Parse(&target); err != nil {
+		// Parse may return an error in some paths; the panic check above is primary.
+		t.Logf("parse returned error: %v", err)
+	}
+
 }

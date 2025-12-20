@@ -243,26 +243,8 @@ func parseWithArgs(target any, args []string) error {
 					return err
 				}
 				fmt.Println(helper)
-				// If root help type is subcmd, consume and return nil; otherwise return parse error so tests can assert
-				helpMode := "flag"
-				if common.IsStructPtr(target) {
-					pt := common.GetStructType(target)
-					for i := range pt.NumField() {
-						f := pt.Field(i)
-						if f.Type.Name() == "Help" {
-							if val := f.Tag.Get("help"); val != "" {
-								helpMode = val
-							} else if val := f.Tag.Get("type"); val != "" {
-								helpMode = val
-							}
-							break
-						}
-					}
-				}
-				if helpMode == "subcmd" {
-					return nil
-				}
-				return errors.NewParseError("unknown usage: help")
+				// Always exit after printing help
+				osExit(0)
 			}
 			second := positionals[1]
 			// collect subcommand names for suggestion
@@ -290,7 +272,8 @@ func parseWithArgs(target any, args []string) error {
 							return err
 						}
 						fmt.Println(helper)
-						return nil
+						// Always exit after printing help
+						osExit(0)
 					}
 				}
 			}
@@ -426,25 +409,7 @@ func parseWithArgs(target any, args []string) error {
 						helper = helper + "\nArguments:\n" + b.String() + "\n"
 					}
 					fmt.Println(helper)
-					// If root's Help is subcmd consume; otherwise exit
-					helpMode := "flag"
-					if common.IsStructPtr(target) {
-						pt := common.GetStructType(target)
-						for i := range pt.NumField() {
-							f := pt.Field(i)
-							if f.Type.Name() == "Help" {
-								if val := f.Tag.Get("help"); val != "" {
-									helpMode = val
-								} else if val := f.Tag.Get("type"); val != "" {
-									helpMode = val
-								}
-								break
-							}
-						}
-					}
-					if helpMode == "subcmd" {
-						return nil
-					}
+					// Always exit after printing help
 					osExit(0)
 				}
 				for _, a := range subArgs {
@@ -487,7 +452,6 @@ func parseWithArgs(target any, args []string) error {
 						return errors.NewParseError("unknown flag: " + a)
 					}
 				}
-				return parseWithArgs(subPtr, subArgs)
 				return parseWithArgs(subPtr, subArgs)
 			}
 		}

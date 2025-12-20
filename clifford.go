@@ -103,3 +103,8 @@ var BuildHelp = display.BuildHelp
 //	}
 //	fmt.Println(version) // Output: mytool v1.2.3
 var BuildVersion = display.BuildVersion
+
+// BuildHelpWithParent exposes the subcommand-aware help builder for callers/tests.
+func BuildHelpWithParent(parent any, subName string, subTarget any, long bool) (string, error) {
+	return display.BuildHelpWithParent(parent, subName, subTarget, long)
+}
