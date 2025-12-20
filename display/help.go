@@ -154,6 +154,11 @@ func argsHelp(target any) string {
 			continue
 		}
 
+		// Skip marker-only structs (no Value field) such as Desc
+		if _, ok := field.Type.FieldByName("Value"); !ok {
+			continue
+		}
+
 		tags := common.GetTagsFromEmbedded(field.Type, field.Name)
 		if tags["short"] != "" || tags["long"] != "" {
 			continue

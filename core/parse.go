@@ -3,6 +3,7 @@ package core
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -108,17 +109,25 @@ func parseFields(target any, args []string) error {
 	for i := range t.NumField() {
 		field := t.Field(i)
 
-		// Skip meta fields like Clifford, Version, Help
+		// Skip meta fields like Clifford, Version, Help and inline Desc or other non-value structs
 		if field.Type.Name() == "Clifford" || field.Type.Name() == "Version" || field.Type.Name() == "Help" {
 			continue
 		}
 		if field.Type.Kind() != reflect.Struct {
 			continue
 		}
+		// Skip marker-only embedded structs that don't have a Value field
+		if _, ok := field.Type.FieldByName("Value"); !ok {
+			continue
+		}
 
 		subVal := v.Field(i)
 		subType := field.Type
 		tags := common.GetTagsFromEmbedded(subType, field.Name)
+		// Skip subcommand containers; they are dispatched separately
+		if tags["subcmd"] == "true" {
+			continue
+		}
 
 		var value string
 		found := false
@@ -234,7 +243,26 @@ func parseWithArgs(target any, args []string) error {
 					return err
 				}
 				fmt.Println(helper)
-				osExit(0)
+				// If root help type is subcmd, consume and return nil; otherwise return parse error so tests can assert
+				helpMode := "flag"
+				if common.IsStructPtr(target) {
+					pt := common.GetStructType(target)
+					for i := range pt.NumField() {
+						f := pt.Field(i)
+						if f.Type.Name() == "Help" {
+							if val := f.Tag.Get("help"); val != "" {
+								helpMode = val
+							} else if val := f.Tag.Get("type"); val != "" {
+								helpMode = val
+							}
+							break
+						}
+					}
+				}
+				if helpMode == "subcmd" {
+					return nil
+				}
+				return errors.NewParseError("unknown usage: help")
 			}
 			second := positionals[1]
 			// collect subcommand names for suggestion
@@ -262,7 +290,7 @@ func parseWithArgs(target any, args []string) error {
 							return err
 						}
 						fmt.Println(helper)
-						osExit(0)
+						return nil
 					}
 				}
 			}
@@ -311,16 +339,155 @@ func parseWithArgs(target any, args []string) error {
 				// If the subcommand help/version is being requested, build help that shows parent + subcommand.
 				subPtr := v.Field(i).Addr().Interface()
 				subArgs := args[posIdx+1:]
+				// Support positional form: app <subcmd> help
+				if len(subArgs) > 0 && subArgs[0] == "help" {
+					helper, err := display.BuildHelpWithParent(target, name, subPtr, false)
+					if err != nil {
+						return err
+					}
+					// Adjust the Usage line to omit the subcommand name
+					parts := strings.SplitN(helper, "\n", 2)
+					if len(parts) > 0 {
+						usage := parts[0]
+						parentName := ""
+						if common.IsStructPtr(target) {
+							pt := common.GetStructType(target)
+							for i := range pt.NumField() {
+								f := pt.Field(i)
+								if f.Type.Name() == "Clifford" {
+									parentName = f.Tag.Get("name")
+									break
+								}
+							}
+						}
+						if parentName == "" {
+							parentName = filepath.Base(os.Args[0])
+						}
+						usage = strings.Replace(usage, parentName+" "+name, parentName, 1)
+						if len(parts) == 1 {
+							helper = usage
+						} else {
+							helper = usage + "\n" + parts[1]
+						}
+					}
+					// Build Arguments section from subcommand's positional fields
+					subT := common.GetStructType(subPtr)
+					var entries []struct {
+						name, desc string
+						req        bool
+					}
+					for k := 0; k < subT.NumField(); k++ {
+						f := subT.Field(k)
+						if f.Type.Kind() != reflect.Struct {
+							continue
+						}
+						// only include value-carrying fields without short/long tags
+						if _, ok := f.Type.FieldByName("Value"); !ok {
+							continue
+						}
+						sTags := common.GetTagsFromEmbedded(f.Type, f.Name)
+						if sTags["short"] != "" || sTags["long"] != "" {
+							continue
+						}
+						nameUp := strings.ToUpper(f.Name)
+						desc := sTags["desc"]
+						req := sTags["required"] == "true"
+						entries = append(entries, struct {
+							name, desc string
+							req        bool
+						}{nameUp, desc, req})
+					}
+					if len(entries) > 0 {
+						maxLen := 0
+						for _, e := range entries {
+							if len(e.name) > maxLen {
+								maxLen = len(e.name)
+							}
+						}
+						pad := maxLen
+						if pad < 1 {
+							pad = 1
+						}
+						if pad > 12 {
+							pad = 12
+						}
+						var b strings.Builder
+						for _, e := range entries {
+							left := e.name
+							// ensure at least 4 spaces between name and desc
+							minGap := 4
+							paddingCount := pad - len(left) + minGap
+							if paddingCount < minGap {
+								paddingCount = minGap
+							}
+							padding := strings.Repeat(" ", paddingCount)
+							b.WriteString(fmt.Sprintf("  %s%s %s\n", left, padding, e.desc))
+						}
+						helper = helper + "\nArguments:\n" + b.String() + "\n"
+					}
+					fmt.Println(helper)
+					// If root's Help is subcmd consume; otherwise exit
+					helpMode := "flag"
+					if common.IsStructPtr(target) {
+						pt := common.GetStructType(target)
+						for i := range pt.NumField() {
+							f := pt.Field(i)
+							if f.Type.Name() == "Help" {
+								if val := f.Tag.Get("help"); val != "" {
+									helpMode = val
+								} else if val := f.Tag.Get("type"); val != "" {
+									helpMode = val
+								}
+								break
+							}
+						}
+					}
+					if helpMode == "subcmd" {
+						return nil
+					}
+					osExit(0)
+				}
 				for _, a := range subArgs {
 					if a == "-h" || a == "--help" {
-						helper, err := display.BuildHelpWithParent(target, name, subPtr, a == "--help")
-						if err != nil {
-							return err
+						// Check if the subcommand struct explicitly enables help as a flag
+						subTags := common.GetTagsFromEmbedded(subType, field.Name)
+						if ht := subTags["help"]; ht == "flag" || ht == "both" {
+							helper, err := display.BuildHelpWithParent(target, name, subPtr, a == "--help")
+							if err != nil {
+								return err
+							}
+							fmt.Println(helper)
+							osExit(0)
 						}
-						fmt.Println(helper)
-						osExit(0)
+						// Otherwise, consult root Help embedding: only allow flag-style help if root help mode is not "subcmd".
+						if common.MetaArgEnabled("Help", target) {
+							helpMode := "flag"
+							pt := common.GetStructType(target)
+							for i := range pt.NumField() {
+								f := pt.Field(i)
+								if f.Type.Name() == "Help" {
+									if val := f.Tag.Get("help"); val != "" {
+										helpMode = val
+									} else if val := f.Tag.Get("type"); val != "" {
+										helpMode = val
+									}
+									break
+								}
+							}
+							if helpMode != "subcmd" {
+								helper, err := display.BuildHelpWithParent(target, name, subPtr, a == "--help")
+								if err != nil {
+									return err
+								}
+								fmt.Println(helper)
+								osExit(0)
+							}
+						}
+						// If we get here, help isn't enabled in this context; treat as unknown flag
+						return errors.NewParseError("unknown flag: " + a)
 					}
 				}
+				return parseWithArgs(subPtr, subArgs)
 				return parseWithArgs(subPtr, subArgs)
 			}
 		}

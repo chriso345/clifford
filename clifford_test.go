@@ -93,3 +93,75 @@ func TestParse_SubcommandDispatch(t *testing.T) {
 	vital.Nil(t, err)
 	assert.Equal(t, target.Serve.Port.Value, 9000)
 }
+
+func TestParse_SubcommandRequired(t *testing.T) {
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+	os.Args = []string{"app", "run", "file.txt"}
+
+	target := struct {
+		clifford.Clifford `name:"app"`
+		clifford.Help
+
+		Run struct {
+			clifford.Subcommand
+			clifford.Desc `desc:"Run a specific file"`
+
+			File struct {
+				Value string
+				clifford.Required
+				clifford.Desc `desc:"File to run"`
+			}
+		}
+	}{}
+
+	err := clifford.Parse(&target)
+	vital.Nil(t, err)
+	assert.True(t, bool(target.Run.Subcommand))
+	assert.Equal(t, target.Run.File.Value, "file.txt")
+}
+
+func TestParse_SubcommandProperHelp(t *testing.T) {
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+	os.Args = []string{"app", "run", "help"}
+
+	target := struct {
+		clifford.Clifford `name:"app"`
+		clifford.Help     `type:"subcmd"`
+
+		Run struct {
+			clifford.Subcommand
+			clifford.Desc `desc:"Run a specific file"`
+
+			File struct {
+				Value string
+				clifford.Required
+				clifford.Desc `desc:"File to run"`
+			}
+		}
+	}{}
+
+	// Capture the stdout output
+	r, w, _ := os.Pipe()
+	oldStdout := os.Stdout
+	os.Stdout = w
+
+	err := clifford.Parse(&target)
+
+	// Print the captured output
+	w.Close()
+	os.Stdout = oldStdout
+	var output []byte
+	buf := make([]byte, 1024)
+	n, _ := r.Read(buf)
+	output = buf[:n]
+
+	t.Log(string(output))
+
+	vital.Nil(t, err)
+	assert.StringContains(t, string(output), "Usage: app <FILE>")
+	assert.StringContains(t, string(output), "Run a specific file")
+	assert.StringContains(t, string(output), "FILE     File to run")
+	assert.NotStringContains(t, string(output), "DESC")
+}
