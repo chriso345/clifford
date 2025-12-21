@@ -5,7 +5,10 @@ import (
 	"os"
 	"regexp"
 
+	stderrors "errors"
+
 	"github.com/chriso345/clifford"
+	"github.com/chriso345/clifford/errors"
 )
 
 func Example_readme() {
@@ -263,4 +266,81 @@ func Example_help_output() {
 func stripANSI(input string) string {
 	re := regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
 	return re.ReplaceAllString(input, "")
+}
+
+// Example_error_types demonstrates checking for specific error kinds with errors.Is and accessing details with errors.As.
+func Example_error_types() {
+	os.Args = []string{"app"}
+	target := struct {
+		clifford.Clifford `name:"app"`
+
+		File struct {
+			Value             string
+			clifford.Required `required:"true"`
+		}
+	}{}
+
+	err := clifford.Parse(&target)
+	if err == nil {
+		fmt.Println("no error")
+		return
+	}
+
+	if stderrors.Is(err, errors.ErrMissingArg) {
+		fmt.Println("missing argument detected")
+	}
+
+	var ma errors.MissingArgError
+	if stderrors.As(err, &ma) {
+		fmt.Println("missing field:", ma.Field)
+	}
+
+	// Output:
+	// missing field: File
+}
+
+// Example_unknown_subcommand shows the parser returning a helpful suggestion for mistyped subcommands.
+func Example_unknown_subcommand() {
+	os.Args = []string{"app", "srve"}
+	target := struct {
+		clifford.Clifford `name:"app"`
+		clifford.Help
+
+		Serve struct {
+			clifford.Subcommand `name:"serve" desc:"Start server"`
+		}
+	}{}
+
+	err := clifford.Parse(&target)
+	if err != nil {
+		fmt.Println(err.Error())
+	}
+	// Output: unknown subcommand: srve (did you mean "serve"?)
+}
+
+// Example_help_as_subcommand demonstrates generating help for a subcommand while keeping parent name in usage.
+func Example_help_as_subcommand() {
+	parent := struct {
+		clifford.Clifford `name:"app" desc:"Parent app"`
+		clifford.Help
+
+		Serve struct {
+			clifford.Subcommand `name:"serve" desc:"Start server"`
+			Port                struct {
+				Value             int
+				clifford.Clifford `long:"port" desc:"Port number"`
+			}
+		}
+	}{}
+
+	sub := parent.Serve
+	help, err := clifford.BuildHelpWithParent(&parent, "serve", &sub, false)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(stripANSI(help))
+	// Output: Usage: app serve [OPTIONS]
+	//
+	// Options:
+	//   --port [PORT]  Port number
 }

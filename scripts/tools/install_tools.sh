@@ -4,6 +4,7 @@ set -euo pipefail
 
 TOOLS=(
   "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.7.1"
+  "github.com/princjef/gomarkdoc/cmd/gomarkdoc@latest"
 )
 
 # Helper to get binary name from Go module

@@ -7,3 +7,5 @@
 // The library is designed to be easy to use and integrate into Go CLI tools,
 // providing a clean API for defining and parsing command-line parameters.
 package clifford
+
+//go:generate gomarkdoc ./ -o docs/clifford.md

@@ -1,6 +1,16 @@
 package errors
 
-import "fmt"
+import (
+	stderrors "errors"
+	"fmt"
+)
+
+var (
+	ErrParse                = stderrors.New("parse error")
+	ErrMissingArg           = stderrors.New("missing argument")
+	ErrUnknownSubcommand    = stderrors.New("unknown subcommand")
+	ErrUnsupportedFieldType = stderrors.New("unsupported field type")
+)
 
 // ParseError represents a generic parsing error produced by the CLI parser.
 // It is intended for user-facing messages.
