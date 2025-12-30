@@ -294,6 +294,79 @@ func stripANSI(input string) string {
 </p>
 </details>
 
+<details><summary>Example (Inline)</summary>
+<p>
+
+
+
+```go
+package main
+
+import (
+	"fmt"
+	"os"
+
+	"github.com/chriso345/clifford"
+)
+
+func main() {
+	args := struct {
+		clifford.Clifford `name:"dmenu"`
+		clifford.Help
+		clifford.Version `version:"0.1.0"`
+
+		Menu struct {
+			Value             string
+			clifford.Clifford `long:"menu" desc:"Start in menu mode"`
+
+			NoConfig bool   `long:"no-config" desc:"Do not load config file"`
+			MaxItems int    `short:"n" long:"max-items" desc:"Override max items (-1 for auto)"`
+			LogLevel string `long:"log-level" desc:"Set log level (debug|info|warn|error)"`
+			DryRun   bool   `long:"dry-run" desc:"Do not execute actions; print selection instead"`
+			Timeout  int    `long:"timeout" desc:"Auto-exit after N seconds of inactivity (0 disables)"`
+		}
+
+		Dmenu struct {
+			clifford.Clifford `long:"dmenu" desc:"Start in dmenu mode"`
+			MaxItems          int    `short:"n" long:"max-items" desc:"Override max items (-1 for auto)"`
+			LogLevel          string `long:"log-level" desc:"Set log level (debug|info|warn|error)"`
+			DryRun            bool   `long:"dry-run" desc:"Do not execute actions; print selection instead"`
+			Timeout           int    `long:"timeout" desc:"Auto-exit after N seconds of inactivity (0 disables)"`
+		}
+
+		Apps struct {
+			clifford.Clifford `long:"apps" desc:"Start in apps mode"`
+			DesktopDir        string `long:"desktop-dir" desc:"Path to .desktop files"`
+			LogLevel          string `long:"log-level" desc:"Set log level (debug|info|warn|error)"`
+			DryRun            bool   `long:"dry-run" desc:"Do not launch apps; print selection instead"`
+		}
+	}{}
+
+	// Simulate command line arguments
+	os.Args = []string{"greg", "menu", "--max-items", "20", "--log-level", "debug"}
+
+	err := clifford.Parse(&args)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("Mode: menu")
+	fmt.Println("MaxItems:", args.Menu.MaxItems)
+	fmt.Println("LogLevel:", args.Menu.LogLevel)
+}
+```
+
+#### Output
+
+```
+Mode: menu
+MaxItems: 20
+LogLevel: debug
+```
+
+</p>
+</details>
+
 <details><summary>Example (List_subcommands)</summary>
 <p>
 
@@ -919,5 +992,411 @@ cli := struct {
 ```go
 type Version = core.Version
 ```
+
+# core
+
+```go
+import "github.com/chriso345/clifford/core"
+```
+
+Package core contains the core logic for parsing command\-line arguments into user\-defined structs using reflection.
+
+It provides the primary parsing function and defines marker types used to annotate struct fields with CLI metadata such as flags, required fields, and descriptions.
+
+This package is intended to be used internally by higher\-level packages, but some core functions may be exposed for advanced use cases.
+
+## Index
+
+- [func Parse\(target any\) error](<#Parse>)
+- [type Clifford](<#Clifford>)
+- [type Desc](<#Desc>)
+- [type Help](<#Help>)
+- [type LongTag](<#LongTag>)
+- [type Required](<#Required>)
+- [type ShortTag](<#ShortTag>)
+- [type Subcommand](<#Subcommand>)
+- [type Version](<#Version>)
+
+
+<a name="Parse"></a>
+## func [Parse](<https://github.com/ChrisO345/clifford/blob/master/core/parse.go#L781>)
+
+```go
+func Parse(target any) error
+```
+
+
+
+<a name="Clifford"></a>
+## type [Clifford](<https://github.com/ChrisO345/clifford/blob/master/core/tags.go#L15>)
+
+
+
+```go
+type Clifford struct{}
+```
+
+<a name="Desc"></a>
+## type [Desc](<https://github.com/ChrisO345/clifford/blob/master/core/tags.go#L24>)
+
+
+
+```go
+type Desc struct{}
+```
+
+<a name="Help"></a>
+## type [Help](<https://github.com/ChrisO345/clifford/blob/master/core/tags.go#L17>)
+
+
+
+```go
+type Help struct{}
+```
+
+<a name="LongTag"></a>
+## type [LongTag](<https://github.com/ChrisO345/clifford/blob/master/core/tags.go#L22>)
+
+
+
+```go
+type LongTag struct{}
+```
+
+<a name="Required"></a>
+## type [Required](<https://github.com/ChrisO345/clifford/blob/master/core/tags.go#L23>)
+
+
+
+```go
+type Required struct{}
+```
+
+<a name="ShortTag"></a>
+## type [ShortTag](<https://github.com/ChrisO345/clifford/blob/master/core/tags.go#L21>)
+
+
+
+```go
+type ShortTag struct{}
+```
+
+<a name="Subcommand"></a>
+## type [Subcommand](<https://github.com/ChrisO345/clifford/blob/master/core/tags.go#L28>)
+
+Subcommand is a marker type used to indicate that a struct field represents a subcommand. Embed this in a sub\-struct to mark it as a subcommand target.
+
+```go
+type Subcommand bool
+```
+
+<a name="Version"></a>
+## type [Version](<https://github.com/ChrisO345/clifford/blob/master/core/tags.go#L16>)
+
+
+
+```go
+type Version struct{}
+```
+
+# display
+
+```go
+import "github.com/chriso345/clifford/display"
+```
+
+Package display provides utilities for generating user\-facing CLI output, including help messages, version strings, and ANSI formatting.
+
+It handles formatting of help text based on the CLI argument struct tags, and building version information to display in the CLI.
+
+This package is separated from core parsing logic to isolate display concerns.
+
+## Index
+
+- [func BuildHelp\(target any, long bool\) \(string, error\)](<#BuildHelp>)
+- [func BuildHelpWithParent\(parent any, subName string, subTarget any, long bool\) \(string, error\)](<#BuildHelpWithParent>)
+- [func BuildVersion\(target any\) \(string, error\)](<#BuildVersion>)
+
+
+<a name="BuildHelp"></a>
+## func [BuildHelp](<https://github.com/ChrisO345/clifford/blob/master/display/help.go#L16>)
+
+```go
+func BuildHelp(target any, long bool) (string, error)
+```
+
+
+
+<a name="BuildHelpWithParent"></a>
+## func [BuildHelpWithParent](<https://github.com/ChrisO345/clifford/blob/master/display/subhelp.go#L11>)
+
+```go
+func BuildHelpWithParent(parent any, subName string, subTarget any, long bool) (string, error)
+```
+
+BuildHelpWithParent builds help for a subcommand while showing the parent application name and the subcommand name together \(e.g. "app server \[OPTIONS\]"\).
+
+<a name="BuildVersion"></a>
+## func [BuildVersion](<https://github.com/ChrisO345/clifford/blob/master/display/version.go#L11>)
+
+```go
+func BuildVersion(target any) (string, error)
+```
+
+
+
+# errors
+
+```go
+import "github.com/chriso345/clifford/errors"
+```
+
+Package errors defines error types and utilities related to CLI parsing and validation within the clifford library.
+
+It centralizes error constants and custom error implementations for consistent error handling across the library.
+
+## Index
+
+- [Variables](<#variables>)
+- [func NewMissingArg\(field string\) error](<#NewMissingArg>)
+- [func NewParseError\(msg string\) error](<#NewParseError>)
+- [func NewUnknownSubcommand\(name, suggestion string\) error](<#NewUnknownSubcommand>)
+- [func NewUnsupportedField\(field, typ string\) error](<#NewUnsupportedField>)
+- [type MissingArgError](<#MissingArgError>)
+  - [func \(e MissingArgError\) Error\(\) string](<#MissingArgError.Error>)
+- [type ParseError](<#ParseError>)
+  - [func \(e ParseError\) Error\(\) string](<#ParseError.Error>)
+- [type UnknownSubcommandError](<#UnknownSubcommandError>)
+  - [func \(e UnknownSubcommandError\) Error\(\) string](<#UnknownSubcommandError.Error>)
+- [type UnsupportedFieldTypeError](<#UnsupportedFieldTypeError>)
+  - [func \(e UnsupportedFieldTypeError\) Error\(\) string](<#UnsupportedFieldTypeError.Error>)
+
+
+## Variables
+
+<a name="ErrParse"></a>
+
+```go
+var (
+    ErrParse                = stderrors.New("parse error")
+    ErrMissingArg           = stderrors.New("missing argument")
+    ErrUnknownSubcommand    = stderrors.New("unknown subcommand")
+    ErrUnsupportedFieldType = stderrors.New("unsupported field type")
+)
+```
+
+<a name="NewMissingArg"></a>
+## func [NewMissingArg](<https://github.com/ChrisO345/clifford/blob/master/errors/errors.go#L48>)
+
+```go
+func NewMissingArg(field string) error
+```
+
+
+
+<a name="NewParseError"></a>
+## func [NewParseError](<https://github.com/ChrisO345/clifford/blob/master/errors/errors.go#L47>)
+
+```go
+func NewParseError(msg string) error
+```
+
+Helper constructors
+
+<a name="NewUnknownSubcommand"></a>
+## func [NewUnknownSubcommand](<https://github.com/ChrisO345/clifford/blob/master/errors/errors.go#L49>)
+
+```go
+func NewUnknownSubcommand(name, suggestion string) error
+```
+
+
+
+<a name="NewUnsupportedField"></a>
+## func [NewUnsupportedField](<https://github.com/ChrisO345/clifford/blob/master/errors/errors.go#L52>)
+
+```go
+func NewUnsupportedField(field, typ string) error
+```
+
+
+
+<a name="MissingArgError"></a>
+## type [MissingArgError](<https://github.com/ChrisO345/clifford/blob/master/errors/errors.go#L22>)
+
+MissingArgError indicates a required positional or flag was not provided.
+
+```go
+type MissingArgError struct{ Field string }
+```
+
+<a name="MissingArgError.Error"></a>
+### func \(MissingArgError\) [Error](<https://github.com/ChrisO345/clifford/blob/master/errors/errors.go#L24>)
+
+```go
+func (e MissingArgError) Error() string
+```
+
+
+
+<a name="ParseError"></a>
+## type [ParseError](<https://github.com/ChrisO345/clifford/blob/master/errors/errors.go#L17>)
+
+ParseError represents a generic parsing error produced by the CLI parser. It is intended for user\-facing messages.
+
+```go
+type ParseError struct{ Msg string }
+```
+
+<a name="ParseError.Error"></a>
+### func \(ParseError\) [Error](<https://github.com/ChrisO345/clifford/blob/master/errors/errors.go#L19>)
+
+```go
+func (e ParseError) Error() string
+```
+
+
+
+<a name="UnknownSubcommandError"></a>
+## type [UnknownSubcommandError](<https://github.com/ChrisO345/clifford/blob/master/errors/errors.go#L30>)
+
+UnknownSubcommandError indicates the user invoked a subcommand that does not exist. Suggestion, if present, is a close match the user may have intended.
+
+```go
+type UnknownSubcommandError struct{ Name, Suggestion string }
+```
+
+<a name="UnknownSubcommandError.Error"></a>
+### func \(UnknownSubcommandError\) [Error](<https://github.com/ChrisO345/clifford/blob/master/errors/errors.go#L32>)
+
+```go
+func (e UnknownSubcommandError) Error() string
+```
+
+
+
+<a name="UnsupportedFieldTypeError"></a>
+## type [UnsupportedFieldTypeError](<https://github.com/ChrisO345/clifford/blob/master/errors/errors.go#L40>)
+
+UnsupportedFieldTypeError indicates the CLI contains an unsupported field type.
+
+```go
+type UnsupportedFieldTypeError struct{ Field, Type string }
+```
+
+<a name="UnsupportedFieldTypeError.Error"></a>
+### func \(UnsupportedFieldTypeError\) [Error](<https://github.com/ChrisO345/clifford/blob/master/errors/errors.go#L42>)
+
+```go
+func (e UnsupportedFieldTypeError) Error() string
+```
+
+
+
+# test
+
+```go
+import "github.com/chriso345/clifford/test"
+```
+
+## Index
+
+- [type CLIArgs](<#CLIArgs>)
+
+
+<a name="CLIArgs"></a>
+## type [CLIArgs](<https://github.com/ChrisO345/clifford/blob/master/test/main.go#L10-L32>)
+
+
+
+```go
+type CLIArgs struct {
+    clifford.Clifford `name:"app"`
+    clifford.Help     `type:"both"`
+    clifford.Version  `version:"0.1.0"`
+    clifford.Desc     `desc:"An example application demonstrating clifford features"`
+
+    Serve struct {
+        clifford.Subcommand `name:"server"`
+        clifford.Help
+        clifford.Desc `desc:"Start the server"`
+
+        Port struct {
+            Value             int `default:"8080"`
+            clifford.Clifford `long:"port"`
+            clifford.Desc     `desc:"Port to run the server on"`
+        }
+
+        Verbose struct {
+            Value             bool
+            clifford.Clifford `short:"v" long:"verbose" desc:"Enable verbose output"`
+        }
+    }
+}
+```
+
+# common
+
+```go
+import "github.com/chriso345/clifford/internal/common"
+```
+
+Package common provides internal utility functions and helpers used across the clifford library.
+
+This package is intended for internal use only and should not be imported by external clients.
+
+## Index
+
+- [func ArgsIndexOf\(args \[\]string, s string\) int](<#ArgsIndexOf>)
+- [func GetStructType\(v any\) reflect.Type](<#GetStructType>)
+- [func GetTagsFromEmbedded\(t reflect.Type, fieldName string\) map\[string\]string](<#GetTagsFromEmbedded>)
+- [func IsStructPtr\(v any\) bool](<#IsStructPtr>)
+- [func MetaArgEnabled\(s string, target any\) bool](<#MetaArgEnabled>)
+
+
+<a name="ArgsIndexOf"></a>
+## func [ArgsIndexOf](<https://github.com/ChrisO345/clifford/blob/master/internal/common/utils.go#L58>)
+
+```go
+func ArgsIndexOf(args []string, s string) int
+```
+
+ArgsIndexOf returns the index of the first occurrence of s in args, or \-1 if not found.
+
+<a name="GetStructType"></a>
+## func [GetStructType](<https://github.com/ChrisO345/clifford/blob/master/internal/common/utils.go#L74>)
+
+```go
+func GetStructType(v any) reflect.Type
+```
+
+GetStructType returns the reflect.Type of the underlying struct pointer.
+
+<a name="GetTagsFromEmbedded"></a>
+## func [GetTagsFromEmbedded](<https://github.com/ChrisO345/clifford/blob/master/internal/common/utils.go#L9>)
+
+```go
+func GetTagsFromEmbedded(t reflect.Type, fieldName string) map[string]string
+```
+
+GetTagsFromEmbedded retrieves tags from embedded structs in the target struct.
+
+<a name="IsStructPtr"></a>
+## func [IsStructPtr](<https://github.com/ChrisO345/clifford/blob/master/internal/common/utils.go#L68>)
+
+```go
+func IsStructPtr(v any) bool
+```
+
+IsStructPtr checks if the provided value is a pointer to a struct.
+
+<a name="MetaArgEnabled"></a>
+## func [MetaArgEnabled](<https://github.com/ChrisO345/clifford/blob/master/internal/common/utils.go#L80>)
+
+```go
+func MetaArgEnabled(s string, target any) bool
+```
+
+MetaArgEnabled returns true if the root struct has a \`Clifford\` field with tag or name matching s or if the field name itself matches s.
 
 Generated by [gomarkdoc](<https://github.com/princjef/gomarkdoc>)

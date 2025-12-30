@@ -26,7 +26,12 @@ func TestFlagHelpExits(t *testing.T) {
 	r, w, _ := os.Pipe()
 	oldOut := os.Stdout
 	os.Stdout = w
-	defer func() { if err := w.Close(); err != nil { t.Fatalf("close pipe: %v", err) }; os.Stdout = oldOut }()
+	defer func() {
+		if err := w.Close(); err != nil {
+			t.Fatalf("close pipe: %v", err)
+		}
+		os.Stdout = oldOut
+	}()
 
 	defer func() {
 		os.Stdout = oldOut
@@ -89,7 +94,12 @@ func TestBothHelpModesExit(t *testing.T) {
 	r, w, _ := os.Pipe()
 	oldOut := os.Stdout
 	os.Stdout = w
-	defer func() { if err := w.Close(); err != nil { t.Fatalf("close pipe: %v", err) }; os.Stdout = oldOut }()
+	defer func() {
+		if err := w.Close(); err != nil {
+			t.Fatalf("close pipe: %v", err)
+		}
+		os.Stdout = oldOut
+	}()
 
 	defer func() {
 		os.Stdout = oldOut
@@ -123,7 +133,12 @@ func TestBothHelpModesExit(t *testing.T) {
 	r2, w2, _ := os.Pipe()
 	oldOut2 := os.Stdout
 	os.Stdout = w2
-	defer func() { if err := w2.Close(); err != nil { t.Fatalf("close pipe: %v", err) }; os.Stdout = oldOut2 }()
+	defer func() {
+		if err := w2.Close(); err != nil {
+			t.Fatalf("close pipe: %v", err)
+		}
+		os.Stdout = oldOut2
+	}()
 
 	defer func() {
 		os.Stdout = oldOut2

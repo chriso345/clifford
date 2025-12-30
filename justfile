@@ -23,3 +23,7 @@ install-tools:
 # Run the command line application
 run *args:
     go run ./cmd/gspl {{ args }}
+
+# Docs generation
+docs:
+    gomarkdoc ./... > docs/clifford.md

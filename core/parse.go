@@ -114,10 +114,110 @@ func parseFields(target any, args []string) error {
 			continue
 		}
 		if field.Type.Kind() != reflect.Struct {
+			// Skip anonymous embedded non-struct markers (like Subcommand)
+			if field.Anonymous {
+				continue
+			}
+			// Handle inline primitive fields (e.g. MaxItems int `short:"n" long:"max-items"`)
+			tags := make(map[string]string)
+			for _, key := range []string{"default", "desc", "required", "short", "long"} {
+				if val := field.Tag.Get(key); val != "" {
+					tags[key] = val
+				}
+			}
+
+			var value string
+			found := false
+
+			longFlag := "--" + tags["long"]
+			shortFlag := "-" + tags["short"]
+
+			// Check long flag
+			if tags["long"] != "" {
+				if val, ok := argMap[longFlag]; ok {
+					value = val
+					found = true
+				}
+			}
+			// Check short flag
+			if !found && tags["short"] != "" {
+				if val, ok := argMap[shortFlag]; ok {
+					value = val
+					found = true
+				}
+			}
+			// Handle boolean flags (without values)
+			if !found && tags["long"] != "" {
+				if _, ok := argIndex[longFlag]; ok {
+					value = "true"
+					found = true
+				}
+			}
+			if !found && tags["short"] != "" {
+				if _, ok := argIndex[shortFlag]; ok {
+					value = "true"
+					found = true
+				}
+			}
+
+			// Handle positional arguments (no short or long tag)
+			if !found && tags["short"] == "" && tags["long"] == "" {
+				if positionalIndex < len(positionals) {
+					value = positionals[positionalIndex]
+					positionalIndex++
+					found = true
+				}
+			}
+
+			// If not found, use any declared default value.
+			if !found {
+				if d, ok := tags["default"]; ok && d != "" {
+					value = d
+					found = true
+				}
+			}
+
+			// Required check
+			if !found && tags["required"] == "true" {
+				return errors.NewMissingArg(field.Name)
+			}
+
+			// Set the value directly on the field
+			if found {
+				valField := v.Field(i)
+				if !valField.IsValid() || !valField.CanSet() {
+					continue
+				}
+
+				switch valField.Kind() {
+				case reflect.String:
+					valField.SetString(value)
+				case reflect.Int:
+					if intVal, err := strconv.Atoi(value); err == nil {
+						valField.SetInt(int64(intVal))
+					}
+				case reflect.Float64:
+					if floatVal, err := strconv.ParseFloat(value, 64); err == nil {
+						valField.SetFloat(floatVal)
+					}
+				case reflect.Bool:
+					if boolVal, err := strconv.ParseBool(value); err == nil {
+						valField.SetBool(boolVal)
+					}
+				default:
+					return errors.NewUnsupportedField(field.Name, valField.Kind().String())
+				}
+			}
+
 			continue
 		}
+
 		// Skip marker-only embedded structs that don't have a Value field
 		if _, ok := field.Type.FieldByName("Value"); !ok {
+			// If the field is marked Required at the struct level (e.g., embedded Required), report missing
+			if common.GetTagsFromEmbedded(field.Type, field.Name)["required"] == "true" {
+				return errors.NewMissingArg(field.Name)
+			}
 			continue
 		}
 
@@ -129,27 +229,28 @@ func parseFields(target any, args []string) error {
 			continue
 		}
 
+		// First, check if the sub-struct itself has a short/long tags (i.e., acts as a flag container)
 		var value string
 		found := false
 
 		longFlag := "--" + tags["long"]
 		shortFlag := "-" + tags["short"]
 
-		// Check long flag
+		// Check long flag on container
 		if tags["long"] != "" {
 			if val, ok := argMap[longFlag]; ok {
 				value = val
 				found = true
 			}
 		}
-		// Check short flag
+		// Check short flag on container
 		if !found && tags["short"] != "" {
 			if val, ok := argMap[shortFlag]; ok {
 				value = val
 				found = true
 			}
 		}
-		// Handle boolean flags (without values)
+		// Handle boolean flags (without values) on container
 		if !found && tags["long"] != "" {
 			if _, ok := argIndex[longFlag]; ok {
 				value = "true"
@@ -163,7 +264,7 @@ func parseFields(target any, args []string) error {
 			}
 		}
 
-		// Handle positional arguments (no short or long tag)
+		// Handle positional arguments for the container (no short or long tag)
 		if !found && tags["short"] == "" && tags["long"] == "" {
 			if positionalIndex < len(positionals) {
 				value = positionals[positionalIndex]
@@ -172,7 +273,7 @@ func parseFields(target any, args []string) error {
 			}
 		}
 
-		// If not found, use any declared default value.
+		// If not found, use any declared default value on container.
 		if !found {
 			if d, ok := tags["default"]; ok && d != "" {
 				value = d
@@ -180,35 +281,130 @@ func parseFields(target any, args []string) error {
 			}
 		}
 
-		// Required check
+		// Required check for container
 		if !found && tags["required"] == "true" {
 			return errors.NewMissingArg(field.Name)
 		}
 
-		// Set the value to the `Value` field
+		// If a value was found for the container, set it to its Value field
 		if found {
 			valField := subVal.FieldByName("Value")
-			if !valField.IsValid() || !valField.CanSet() {
+			if valField.IsValid() && valField.CanSet() {
+				switch valField.Kind() {
+				case reflect.String:
+					valField.SetString(value)
+				case reflect.Int:
+					if intVal, err := strconv.Atoi(value); err == nil {
+						valField.SetInt(int64(intVal))
+					}
+				case reflect.Float64:
+					if floatVal, err := strconv.ParseFloat(value, 64); err == nil {
+						valField.SetFloat(floatVal)
+					}
+				case reflect.Bool:
+					if boolVal, err := strconv.ParseBool(value); err == nil {
+						valField.SetBool(boolVal)
+					}
+				default:
+					return errors.NewUnsupportedField(field.Name, valField.Kind().String())
+				}
+			}
+		}
+
+		// Next, handle inline primitive fields declared inside the sub-struct (e.g., MaxItems int `short:"n" long:"max-items"`)
+		for j := 0; j < subType.NumField(); j++ {
+			inner := subType.Field(j)
+			// skip anonymous embedded markers
+			if inner.Anonymous {
+				continue
+			}
+			// Skip inner Value field (handled by container) and only consider non-struct primitive fields
+			if inner.Name == "Value" {
+				continue
+			}
+			if inner.Type.Kind() == reflect.Struct {
 				continue
 			}
 
-			switch valField.Kind() {
-			case reflect.String:
-				valField.SetString(value)
-			case reflect.Int:
-				if intVal, err := strconv.Atoi(value); err == nil {
-					valField.SetInt(int64(intVal))
+			// Collect tags from struct tags on the inner field
+			tags2 := make(map[string]string)
+			for _, key := range []string{"default", "desc", "required", "short", "long"} {
+				if val := inner.Tag.Get(key); val != "" {
+					tags2[key] = val
 				}
-			case reflect.Float64:
-				if floatVal, err := strconv.ParseFloat(value, 64); err == nil {
-					valField.SetFloat(floatVal)
+			}
+			// allow positional inner fields (no short/long) as well
+			// proceed even if short/long empty
+
+			lFlag := "--" + tags2["long"]
+			sFlag := "-" + tags2["short"]
+			var iv string
+			foundInner := false
+			if tags2["long"] != "" {
+				if val, ok := argMap[lFlag]; ok {
+					iv = val
+					foundInner = true
 				}
-			case reflect.Bool:
-				if boolVal, err := strconv.ParseBool(value); err == nil {
-					valField.SetBool(boolVal)
+			}
+			if !foundInner && tags2["short"] != "" {
+				if val, ok := argMap[sFlag]; ok {
+					iv = val
+					foundInner = true
 				}
-			default:
-				return errors.NewUnsupportedField(field.Name, valField.Kind().String())
+			}
+			if !foundInner && tags2["long"] != "" {
+				if _, ok := argIndex[lFlag]; ok {
+					iv = "true"
+					foundInner = true
+				}
+			}
+			if !foundInner && tags2["short"] != "" {
+				if _, ok := argIndex[sFlag]; ok {
+					iv = "true"
+					foundInner = true
+				}
+			}
+			if !foundInner && tags2["short"] == "" && tags2["long"] == "" {
+				// positional inner field
+				if positionalIndex < len(positionals) {
+					iv = positionals[positionalIndex]
+					positionalIndex++
+					foundInner = true
+				}
+			}
+			if !foundInner {
+				if d, ok := tags2["default"]; ok && d != "" {
+					iv = d
+					foundInner = true
+				}
+			}
+			if !foundInner && tags2["required"] == "true" {
+				return errors.NewMissingArg(inner.Name)
+			}
+			if foundInner {
+				// set value on subVal's field
+				f := subVal.FieldByName(inner.Name)
+				if !f.IsValid() || !f.CanSet() {
+					continue
+				}
+				switch f.Kind() {
+				case reflect.String:
+					f.SetString(iv)
+				case reflect.Int:
+					if intVal, err := strconv.Atoi(iv); err == nil {
+						f.SetInt(int64(intVal))
+					}
+				case reflect.Float64:
+					if floatVal, err := strconv.ParseFloat(iv, 64); err == nil {
+						f.SetFloat(floatVal)
+					}
+				case reflect.Bool:
+					if boolVal, err := strconv.ParseBool(iv); err == nil {
+						f.SetBool(boolVal)
+					}
+				default:
+					return errors.NewUnsupportedField(inner.Name, f.Kind().String())
+				}
 			}
 		}
 	}

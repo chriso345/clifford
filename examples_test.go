@@ -344,3 +344,65 @@ func Example_help_as_subcommand() {
 	// Options:
 	//   --port [PORT]  Port number
 }
+
+func Example_inline() {
+	cli := struct {
+		clifford.Clifford `name:"myapp"`
+
+		Value string `long:"value" desc:"A simple value flag"`
+		Color string `short:"c" long:"color" desc:"Color option"`
+	}{}
+
+	// Simulate command line arguments
+	os.Args = []string{"myapp", "--value", "42", "-c", "red"}
+
+	err := clifford.Parse(&cli)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("Value:", cli.Value)
+	fmt.Println("Color:", cli.Color)
+	// Output:
+	// Value: 42
+	// Color: red
+}
+
+func Example_subcommands_inline() {
+	args := struct {
+		clifford.Clifford `name:"tool"`
+		clifford.Help
+
+		Mode struct {
+			clifford.Subcommand `short:"m" long:"mode" desc:"Mode to run in"`
+
+			MaxItems int    `short:"n" long:"max-items" desc:"Max items to show"`
+			LogLevel string `long:"log-level" desc:"Set log level"`
+		}
+
+		Other struct {
+			Value             string
+			clifford.Clifford `long:"other" desc:"Other mode"`
+		}
+	}{}
+
+	// Simulate command line arguments
+	os.Args = []string{"tool", "mode", "--max-items", "20", "--log-level", "debug"}
+
+	err := clifford.Parse(&args)
+	if err != nil {
+		panic(err)
+	}
+
+	if args.Mode.Subcommand {
+		fmt.Println("Mode: mode")
+	}
+	fmt.Println("MaxItems:", args.Mode.MaxItems)
+	fmt.Println("LogLevel:", args.Mode.LogLevel)
+	fmt.Println("Other:", args.Other.Value)
+	// Output:
+	// Mode: mode
+	// MaxItems: 20
+	// LogLevel: debug
+	// Other:
+}
